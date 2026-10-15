@@ -178,7 +178,7 @@ func (s *state) collect(d *decl, st *ast.StructType, depth int, seen map[*decl]b
 		names := fld.Names
 		embedded := len(names) == 0
 		if embedded {
-			names = []*ast.Ident{embeddedName(fld.Type)}
+			names = []*ast.Ident{typeName(fld.Type)}
 		}
 		if opts.has("inline") || (embedded && key == "" && s.opts.Tag == "json") {
 			owner, est := s.structOf(s.resolve(d.file, fld.Type))
@@ -254,19 +254,19 @@ func (s *state) tag(fld *ast.Field) (key string, opts tagOptions, ok bool) {
 	return key, tagOptions(o), true
 }
 
-// embeddedName returns the field name of an embedded type.
-func embeddedName(e ast.Expr) *ast.Ident {
+// typeName returns the name of a possibly pointer or generic type.
+func typeName(e ast.Expr) *ast.Ident {
 	switch e := e.(type) {
 	case *ast.Ident:
 		return e
 	case *ast.StarExpr:
-		return embeddedName(e.X)
+		return typeName(e.X)
 	case *ast.SelectorExpr:
 		return e.Sel
 	case *ast.IndexExpr:
-		return embeddedName(e.X)
+		return typeName(e.X)
 	case *ast.IndexListExpr:
-		return embeddedName(e.X)
+		return typeName(e.X)
 	}
 	return nil
 }
@@ -347,12 +347,33 @@ func (s *state) typeOf(f *file, e ast.Expr, hint string) *ptype {
 }
 
 func (s *state) ref(d *decl, at ast.Node) *ptype {
+	if t := s.marshaled(d); t != nil {
+		return t
+	}
 	if d.generic {
 		s.warnf(at.Pos(), "generic type %s; using Any", d.name)
 		return builtin("Any")
 	}
 	s.use(d)
 	return &ptype{ref: d}
+}
+
+// marshaled returns the type that a declared type with a custom marshaler
+// encodes to: String for text marshalers, and Any for the others, whose
+// output is unknown. Custom unmarshalers alone, which often just set
+// defaults, keep the declared form.
+func (s *state) marshaled(d *decl) *ptype {
+	if d.pkg.types[d.name] != d {
+		return nil // anonymous struct
+	}
+	methods := d.pkg.methods[d.name]
+	switch {
+	case methods["Marshal"+strings.ToUpper(s.opts.Tag)]:
+		return builtin("Any")
+	case methods["MarshalText"]:
+		return builtin("String")
+	}
+	return nil
 }
 
 // wellKnown maps standard library types that encode to a fixed form.

@@ -36,6 +36,9 @@ class Config {
   num: Number
   any: Any
   ext: Any
+  created: Any
+  color: String
+  defaults: Defaults
   `-`: String
 }
 
@@ -72,3 +75,8 @@ class Owner {
 
 /// Admin is a named struct type.
 typealias Admin = Owner
+
+/// Defaults only customizes decoding, so it keeps its fields.
+class Defaults {
+  mode: String
+}

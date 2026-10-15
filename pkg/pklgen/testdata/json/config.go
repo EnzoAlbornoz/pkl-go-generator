@@ -42,16 +42,19 @@ type Config struct {
 	Meta
 	*Owner `json:"owner"`
 
-	APIKey  string          `json:"api-key"`
-	Class   string          `json:"class"`
-	Raw     json.RawMessage `json:"raw"`
-	Num     json.Number     `json:"num"`
-	Any     any             `json:"any"`
-	Ext     ext.Thing       `json:"ext"`
-	Done    chan bool       `json:"done"`
-	Secret  string          `json:"-"`
-	Dash    string          `json:"-,"`
-	private int
+	APIKey   string          `json:"api-key"`
+	Class    string          `json:"class"`
+	Raw      json.RawMessage `json:"raw"`
+	Num      json.Number     `json:"num"`
+	Any      any             `json:"any"`
+	Ext      ext.Thing       `json:"ext"`
+	Done     chan bool       `json:"done"`
+	Created  Timestamp       `json:"created"`
+	Color    Color           `json:"color"`
+	Defaults Defaults        `json:"defaults"`
+	Secret   string          `json:"-"`
+	Dash     string          `json:"-,"`
+	private  int
 }
 
 // Level is a log level.
@@ -98,3 +101,20 @@ type unexported struct {
 type Page[T any] struct {
 	Items []T `json:"items"`
 }
+
+// Timestamp marshals itself, so its JSON form is unknown.
+type Timestamp struct{ sec int64 }
+
+func (t Timestamp) MarshalJSON() ([]byte, error) { return nil, nil }
+
+// Color is marshaled as text.
+type Color struct{ R, G, B uint8 }
+
+func (c *Color) MarshalText() ([]byte, error) { return nil, nil }
+
+// Defaults only customizes decoding, so it keeps its fields.
+type Defaults struct {
+	Mode string `json:"mode"`
+}
+
+func (d *Defaults) UnmarshalJSON(b []byte) error { return nil }

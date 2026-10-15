@@ -169,6 +169,9 @@ embedded one wins, as it does in Go.
 | Anonymous struct                     | `class` named after the parent type and field       |
 | Other named type                     | `typealias`                                         |
 | `type T string` with typed constants | `typealias T = "a" \| "b"`                          |
+| Type with a `MarshalText` method     | `String`                                            |
+| Type with a `MarshalJSON` method     | `Any` with `-t json`                                |
+| Type with a `MarshalYAML` method     | `Any` with `-t yaml`                                |
 
 Types from packages that were not given on the command line become `Any`, and
 channels, functions, complex numbers and `error` are skipped; both cases print a
@@ -178,10 +181,12 @@ also with a warning.
 
 ## Limitations
 
-Types are read from source without type checking, so the generator does not
-see custom `MarshalJSON`, `MarshalYAML` or `MarshalText` methods, and it maps
-generic types to `Any`. Edit the generated schema, or wrap the type, when
-those matter.
+Types are read from source without type checking. Marshaler methods are
+recognized only when they are declared on the type itself, not when they are
+promoted from an embedded field, and generic types map to `Any`. A type that
+customizes only decoding, with `UnmarshalJSON` or `UnmarshalYAML`, keeps its
+fields, as such methods usually just fill in defaults. Edit the generated
+schema when these rules do not fit.
 
 ## Library
 

@@ -22,3 +22,10 @@ class Meta {
 class Nested {
   depth: UInt8
 }
+
+/// Plain has a JSON marshaler, which YAML ignores, and a YAML marshaler only
+/// for Custom.
+class Plain {
+  value: String
+  custom: Any
+}

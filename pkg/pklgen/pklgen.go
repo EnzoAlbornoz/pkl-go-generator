@@ -66,8 +66,9 @@ type pkg struct {
 	dir, name string
 	files     []*file
 	types     map[string]*decl
-	decls     []*decl             // in source order
-	enums     map[string][]string // string constants by type name
+	decls     []*decl                    // in source order
+	enums     map[string][]string        // string constants by type name
+	methods   map[string]map[string]bool // method names by type name
 }
 
 // file holds the imports of one source file.
@@ -193,6 +194,14 @@ func (g *Generator) parse(importPath, name string, src []byte, root bool) error 
 		}
 	}
 	for _, d := range af.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil && len(fd.Recv.List) == 1 {
+			if recv := typeName(fd.Recv.List[0].Type); recv != nil {
+				if p.methods[recv.Name] == nil {
+					p.methods[recv.Name] = map[string]bool{}
+				}
+				p.methods[recv.Name][fd.Name.Name] = true
+			}
+		}
 		gd, ok := d.(*ast.GenDecl)
 		if !ok {
 			continue
@@ -257,7 +266,14 @@ func (g *Generator) pkg(importPath, dir, name string) *pkg {
 			}
 		}
 	}
-	p := &pkg{path: importPath, dir: dir, name: name, types: map[string]*decl{}, enums: map[string][]string{}}
+	p := &pkg{
+		path:    importPath,
+		dir:     dir,
+		name:    name,
+		types:   map[string]*decl{},
+		enums:   map[string][]string{},
+		methods: map[string]map[string]bool{},
+	}
 	g.pkgs = append(g.pkgs, p)
 	if importPath != "" {
 		g.byPath[importPath] = p
@@ -421,7 +437,7 @@ func (g *Generator) Generate(w io.Writer) error {
 	} else {
 		for _, p := range slices.Clone(g.pkgs) {
 			for _, d := range p.decls {
-				if !d.file.root || !ast.IsExported(d.name) || d.generic {
+				if !d.file.root || !ast.IsExported(d.name) || d.generic || s.marshaled(d) != nil {
 					continue
 				}
 				if _, st := g.structOf(d); st != nil {
