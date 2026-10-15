@@ -34,21 +34,37 @@ type Options struct {
 	// Module is the name in the module clause. It defaults to Root.
 	Module string
 
+	// Import, if non-nil, returns the source files of the package with the
+	// given import path, or none if the package is unknown. Generated types
+	// that refer to an imported package then load it, and only the types
+	// they reach are generated from it.
+	Import func(path string) ([]File, error)
+
 	// Warn, if non-nil, receives non-fatal diagnostics.
 	Warn func(msg string)
+}
+
+// A File is a Go source file.
+type File struct {
+	Name string // used in diagnostics
+	Src  []byte
 }
 
 // A Generator collects Go source files and generates a Pkl module from the
 // types they declare.
 type Generator struct {
-	opts Options
-	fset *token.FileSet
-	pkgs []*pkg
+	opts   Options
+	fset   *token.FileSet
+	pkgs   []*pkg
+	byPath map[string]*pkg // by import path; nil if the import failed
+	warned map[string]bool
 }
 
 // pkg holds the declarations of one Go package.
 type pkg struct {
+	path      string // import path, if known
 	dir, name string
+	files     []*file
 	types     map[string]*decl
 	decls     []*decl             // in source order
 	enums     map[string][]string // string constants by type name
@@ -56,6 +72,8 @@ type pkg struct {
 
 // file holds the imports of one source file.
 type file struct {
+	name    string
+	root    bool // its struct types are generated
 	pkg     *pkg
 	imports map[string]string // import path by local name
 }
@@ -87,26 +105,92 @@ func New(opts Options) (*Generator, error) {
 	if opts.Module != "" && !moduleName.MatchString(opts.Module) {
 		return nil, fmt.Errorf("invalid module name %q", opts.Module)
 	}
-	return &Generator{opts: opts, fset: token.NewFileSet()}, nil
+	return &Generator{
+		opts:   opts,
+		fset:   token.NewFileSet(),
+		byPath: map[string]*pkg{},
+		warned: map[string]bool{},
+	}, nil
 }
 
-// AddFile parses the Go source src and records its declarations. Files in
-// the same directory with the same package clause form one package; name is
-// also used in diagnostics.
+// AddFile parses the Go source src and generates the struct types it
+// declares. Files in the same directory with the same package clause form
+// one package; name is also used in diagnostics.
 func (g *Generator) AddFile(name string, src []byte) error {
+	return g.parse("", name, src, true)
+}
+
+// AddPackage imports the package with the given import path through
+// Options.Import, and generates the struct types it declares, or only those
+// declared in the files with the given base names.
+func (g *Generator) AddPackage(importPath string, files ...string) error {
+	p, err := g.load(importPath)
+	if err != nil {
+		return err
+	}
+	if p == nil {
+		return fmt.Errorf("package %s not found", importPath)
+	}
+	for _, name := range files {
+		if !slices.ContainsFunc(p.files, func(f *file) bool { return filepath.Base(f.name) == name }) {
+			return fmt.Errorf("package %s has no file %s", importPath, name)
+		}
+	}
+	for _, f := range p.files {
+		if len(files) == 0 || slices.Contains(files, filepath.Base(f.name)) {
+			f.root = true
+		}
+	}
+	return nil
+}
+
+// load returns the package with the given import path, importing it on
+// first use. It returns nil if the package is unknown.
+func (g *Generator) load(importPath string) (*pkg, error) {
+	if p, ok := g.byPath[importPath]; ok {
+		return p, nil
+	}
+	g.byPath[importPath] = nil
+	if g.opts.Import == nil {
+		return nil, nil
+	}
+	files, err := g.opts.Import(importPath)
+	if err != nil {
+		return nil, fmt.Errorf("import %s: %w", importPath, err)
+	}
+	for _, f := range files {
+		if err := g.parse(importPath, f.Name, f.Src, false); err != nil {
+			return nil, err
+		}
+	}
+	return g.byPath[importPath], nil
+}
+
+// parse records the declarations of a file of the package with the given
+// import path, or of the package in its directory if the path is empty.
+func (g *Generator) parse(importPath, name string, src []byte, root bool) error {
 	af, err := parser.ParseFile(g.fset, name, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		return err
 	}
-	p := g.pkg(filepath.Dir(name), af.Name.Name)
-	f := &file{pkg: p, imports: map[string]string{}}
+	p := g.pkg(importPath, filepath.Dir(name), af.Name.Name)
+	f := &file{name: name, root: root, pkg: p, imports: map[string]string{}}
+	p.files = append(p.files, f)
 	for _, is := range af.Imports {
-		path, _ := strconv.Unquote(is.Path.Value)
-		local := importName(path)
 		if is.Name != nil {
-			local = is.Name.Name
+			f.imports[is.Name.Name], _ = strconv.Unquote(is.Path.Value)
 		}
-		f.imports[local] = path
+	}
+	for _, is := range af.Imports {
+		if is.Name != nil {
+			continue
+		}
+		path, _ := strconv.Unquote(is.Path.Value)
+		for _, local := range importNames(path) {
+			if _, ok := f.imports[local]; !ok {
+				f.imports[local] = path
+			}
+		}
 	}
 	for _, d := range af.Decls {
 		gd, ok := d.(*ast.GenDecl)
@@ -159,15 +243,40 @@ func (g *Generator) AddFile(name string, src []byte) error {
 	return nil
 }
 
-func (g *Generator) pkg(dir, name string) *pkg {
-	for _, p := range g.pkgs {
-		if p.dir == dir && p.name == name {
+// pkg returns the package with the given import path or, if the path is
+// empty, the package in dir with the given name.
+func (g *Generator) pkg(importPath, dir, name string) *pkg {
+	if importPath != "" {
+		if p := g.byPath[importPath]; p != nil {
 			return p
 		}
+	} else {
+		for _, p := range g.pkgs {
+			if p.path == "" && p.dir == dir && p.name == name {
+				return p
+			}
+		}
 	}
-	p := &pkg{dir: dir, name: name, types: map[string]*decl{}, enums: map[string][]string{}}
+	p := &pkg{path: importPath, dir: dir, name: name, types: map[string]*decl{}, enums: map[string][]string{}}
 	g.pkgs = append(g.pkgs, p)
+	if importPath != "" {
+		g.byPath[importPath] = p
+	}
 	return p
+}
+
+func (g *Generator) warnf(pos token.Pos, format string, args ...any) {
+	if g.opts.Warn == nil {
+		return
+	}
+	msg := fmt.Sprintf(format, args...)
+	if pos.IsValid() {
+		msg = g.fset.Position(pos).String() + ": " + msg
+	}
+	if !g.warned[msg] {
+		g.warned[msg] = true
+		g.opts.Warn(msg)
+	}
 }
 
 // lookup finds the declaration named "Name" or "pkg.Name".
@@ -191,15 +300,23 @@ func (g *Generator) lookup(s string) (*decl, error) {
 	return nil, fmt.Errorf("type %s is ambiguous; qualify it as pkg.%s", s, name)
 }
 
-// find returns the declaration of name in a package other than from that
-// matches the import path.
+// find returns the declaration of name in the package with the given import
+// path: the package imported from that path or, failing that, a package
+// added by AddFile whose name or directory matches the path.
 func (g *Generator) find(from *pkg, importPath, name string) *decl {
+	p, err := g.load(importPath)
+	if err != nil {
+		g.warnf(token.NoPos, "%v", err)
+	}
+	if p != nil {
+		return p.types[name]
+	}
 	for _, p := range g.pkgs {
 		d := p.types[name]
-		if d == nil || p == from {
+		if d == nil || p == from || p.path != "" {
 			continue
 		}
-		if p.name == importName(importPath) || filepath.Base(p.dir) == path.Base(importPath) {
+		if slices.Contains(importNames(importPath), p.name) || filepath.Base(p.dir) == path.Base(importPath) {
 			return d
 		}
 	}
@@ -242,14 +359,20 @@ func (f *file) importPath(local string) string {
 	return local
 }
 
-// importName guesses the package name of an import path.
-func importName(importPath string) string {
+// importNames guesses the package name of an import path. A path that ends
+// in a version, such as ".../v2", yields both the element before it and the
+// version itself.
+func importNames(importPath string) []string {
 	elems := strings.Split(importPath, "/")
-	name := elems[len(elems)-1]
-	if len(elems) > 1 && isMajorVersion(name) {
-		name = elems[len(elems)-2]
+	last := elems[len(elems)-1]
+	if len(elems) > 1 && isMajorVersion(last) {
+		return []string{cleanName(elems[len(elems)-2]), last}
 	}
-	name, _, _ = strings.Cut(name, ".")
+	return []string{cleanName(last)}
+}
+
+func cleanName(elem string) string {
+	name, _, _ := strings.Cut(elem, ".")
 	name = strings.TrimPrefix(name, "go-")
 	return strings.TrimSuffix(name, "-go")
 }
@@ -268,7 +391,6 @@ func (g *Generator) Generate(w io.Writer) error {
 		Generator: g,
 		defs:      map[*decl]*def{},
 		anon:      map[*ast.StructType]*decl{},
-		warned:    map[string]bool{},
 	}
 	var (
 		props     []prop
@@ -297,9 +419,12 @@ func (g *Generator) Generate(w io.Writer) error {
 		}
 		hasModule = true
 	} else {
-		for _, p := range g.pkgs {
+		for _, p := range slices.Clone(g.pkgs) {
 			for _, d := range p.decls {
-				if _, st := g.structOf(d); st != nil && ast.IsExported(d.name) && !d.generic {
+				if !d.file.root || !ast.IsExported(d.name) || d.generic {
+					continue
+				}
+				if _, st := g.structOf(d); st != nil {
 					s.use(d)
 				}
 			}

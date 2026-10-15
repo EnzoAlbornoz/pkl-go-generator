@@ -1,7 +1,6 @@
 package pklgen
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -13,10 +12,9 @@ import (
 // state holds the progress of one Generate call.
 type state struct {
 	*Generator
-	queue  []*decl // declarations to generate, in discovery order
-	defs   map[*decl]*def
-	anon   map[*ast.StructType]*decl
-	warned map[string]bool
+	queue []*decl // declarations to generate, in discovery order
+	defs  map[*decl]*def
+	anon  map[*ast.StructType]*decl
 }
 
 // def is the Pkl definition of a declaration: a typealias when alias is
@@ -103,20 +101,6 @@ var basics = map[string]string{
 	"float32": "Float",
 	"float64": "Float",
 	"any":     "Any",
-}
-
-func (s *state) warnf(pos token.Pos, format string, args ...any) {
-	if s.opts.Warn == nil {
-		return
-	}
-	msg := fmt.Sprintf(format, args...)
-	if pos.IsValid() {
-		msg = s.fset.Position(pos).String() + ": " + msg
-	}
-	if !s.warned[msg] {
-		s.warned[msg] = true
-		s.opts.Warn(msg)
-	}
 }
 
 // use schedules d for generation.
