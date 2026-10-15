@@ -7,6 +7,27 @@ that Pkl renders from the schema decodes straight into your Go types.
 
 ## Install
 
+Each [release](https://github.com/EnzoAlbornoz/pkl-go-generator/releases) has
+archives for macOS on Apple silicon, Linux x64 and Windows x64. The release
+workflow signs them with [packslip](https://packslip.dev), so packslip or
+[mise](https://mise.jdx.dev) can install a verified release:
+
+```sh
+packslip install github.com/EnzoAlbornoz/pkl-go-generator
+mise use -g packslip:github.com/EnzoAlbornoz/pkl-go-generator
+```
+
+To check a downloaded archive against the release's `packslip.sigstore.json`:
+
+```sh
+packslip verify packslip.sigstore.json \
+  --identity-prefix https://github.com/EnzoAlbornoz/pkl-go-generator/ \
+  --issuer https://token.actions.githubusercontent.com \
+  --artifact pkl-go-generator-1.2.3-linux-x64.tar.gz
+```
+
+On other platforms, or to build from source, use Go:
+
 ```sh
 go install github.com/EnzoAlbornoz/pkl-go-generator/cmd/pkl-go-generator@latest
 ```
@@ -250,3 +271,26 @@ package by its import path. See [`pklgen`](https://pkg.go.dev/github.com/EnzoAlb
 go test ./...                  # the Pkl tests run when pkl is in PATH
 go test ./pkg/pklgen -update   # rewrite the golden files in pkg/pklgen/testdata
 ```
+
+## Releasing
+
+Push a version tag from `main`:
+
+```sh
+git tag -a v1.2.3 -m v1.2.3
+git push origin v1.2.3
+```
+
+The [release workflow](.github/workflows/release.yml) runs the tests on the
+tagged commit and builds an archive per platform with `scripts/dist.sh`. A job
+with no write access then signs the archives with packslip, and a last job
+publishes the GitHub release with the archives, `SHA256SUMS`,
+`packslip.sigstore.json` and notes generated from the changes. A tag with a
+suffix, such as `v1.2.3-rc.1`, publishes a prerelease.
+
+To build an archive locally, run `scripts/dist.sh 1.2.3 darwin arm64`; it needs
+`zip` for Windows archives.
+
+After the first release, run `packslip pin packslip.sigstore.json` on its
+bundle and publish the printed signer fingerprint here, so that users can pass
+it to `packslip install --pin` and `packslip verify --pin`.
