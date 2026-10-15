@@ -41,7 +41,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	module := flags.String("m", "", "set the module `name` (default: the root type)")
 	out := flags.String("o", "", "write to `file` instead of standard output")
 	root := flags.String("r", "", "make the fields of struct `type` module properties")
-	tag := flags.String("t", "json", "name fields after the struct `tag` json or yaml")
+	tag := flags.String("t", "json", "use the `tag` struct tag for field names: json or yaml")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
