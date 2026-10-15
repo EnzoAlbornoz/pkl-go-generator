@@ -14,13 +14,14 @@ go install github.com/EnzoAlbornoz/pkl-go-generator/cmd/pkl-go-generator@latest
 ## Usage
 
 ```
-pkl-go-generator [-R] [-m module] [-o file] [-r type] [-t tag] [path ...]
+pkl-go-generator [-R] [-m module] [-o file] [-r type] [-t tag] [source ...]
 ```
 
-Each path is a Go source file or a directory of them. With no path, or with
-`-`, the command reads one file from standard input. The schema is written to
-standard output, and warnings and errors go to standard error. The exit status
-is 0 on success, 1 on failure and 2 on invalid usage.
+Each source is a Go file or a directory of them, or a remote package: an
+import path or a URL, described [below](#remote-packages). With no source, or
+with `-`, the command reads one file from standard input. The schema is written
+to standard output, and warnings and errors go to standard error. The exit
+status is 0 on success, 1 on failure and 2 on invalid usage.
 
 | Option      | Meaning                                                        |
 | ----------- | -------------------------------------------------------------- |
@@ -38,6 +39,39 @@ form `pkg.Type` when several packages declare the type.
 Directories are read the way the `go` command reads them: `_test.go` files and
 names starting with `.` or `_` are skipped, and so are `testdata` and `vendor`
 when descending.
+
+## Remote packages
+
+A source that is not a local path can name a package to download:
+
+```sh
+# An import path, at the latest version or at a given one.
+pkl-go-generator k8s.io/api/apps/v1@v0.31.0
+
+# A GitHub directory or file, at a branch, tag or commit.
+pkl-go-generator -r Deployment https://github.com/kubernetes/api/blob/v0.31.0/apps/v1/types.go
+
+# Any other URL of a Go file.
+pkl-go-generator https://example.com/config.go
+```
+
+A URL of a file generates the structs of that file only, but the rest of its
+package is read too. For GitHub URLs, the import path comes from the nearest
+`go.mod` in the repository, so modules hosted under another path, such as
+`k8s.io/api` above, work.
+
+The types of remote packages may refer to types of other packages. These are
+downloaded too, at the versions that the module requires, and only the types
+that are referred to are generated from them. The example above generates
+`ObjectMeta` from `k8s.io/apimachinery` and `PodSpec` from `k8s.io/api/core/v1`,
+but no other types of those packages. The imports of a file fetched from a
+plain URL are downloaded at their latest versions.
+
+Downloads go through the `go` command, which must be installed. It honors your
+`GOPROXY`, `GOPRIVATE` and related settings, verifies checksums, keeps the
+modules in its cache for later runs, and selects files by build constraints.
+The imports of local sources are not downloaded: they are resolved only against
+the other sources given.
 
 ## Example
 
@@ -173,9 +207,8 @@ embedded one wins, as it does in Go.
 | Type with a `MarshalJSON` method     | `Any` with `-t json`                                |
 | Type with a `MarshalYAML` method     | `Any` with `-t yaml`                                |
 
-Types from packages that were not given on the command line become `Any`, and
-channels, functions, complex numbers and `error` are skipped; both cases print a
-warning. A type whose name is already taken, by a Pkl type it would shadow,
+Types that cannot be found become `Any`, and channels, functions, complex
+numbers and `error` are skipped; both cases print a warning. A type whose name is already taken, by a Pkl type it would shadow,
 by a module property or by a type of another package, gets a numeric suffix,
 also with a warning.
 
@@ -205,7 +238,9 @@ if err := g.AddFile("config.go", src); err != nil {
 return g.Generate(os.Stdout)
 ```
 
-See [`pklgen`](https://pkg.go.dev/github.com/EnzoAlbornoz/pkl-go-generator/pkg/pklgen).
+To resolve types from other packages, set `Options.Import` to a function that
+returns the files of a package by import path; `AddPackage` then adds a whole
+package by its import path. See [`pklgen`](https://pkg.go.dev/github.com/EnzoAlbornoz/pkl-go-generator/pkg/pklgen).
 
 ## Development
 

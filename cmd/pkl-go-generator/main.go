@@ -2,11 +2,14 @@
 //
 // Usage:
 //
-//	pkl-go-generator [-R] [-m module] [-o file] [-r type] [-t tag] [path ...]
+//	pkl-go-generator [-R] [-m module] [-o file] [-r type] [-t tag] [source ...]
 //
-// Each path is a Go source file or a directory of them; "-" or no path at
-// all reads a single file from standard input. The schema is written to
-// standard output, and diagnostics to standard error.
+// Each source is a Go file or a directory of them, an import path with an
+// optional "@version" suffix, or the URL of a Go file or of a GitHub
+// directory or file. "-" or no source at all reads a single file from
+// standard input. Remote packages, and the packages that their types refer
+// to, are downloaded with the go command. The schema is written to standard
+// output, and diagnostics to standard error.
 package main
 
 import (
@@ -15,10 +18,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/EnzoAlbornoz/pkl-go-generator/internal/remote"
 	"github.com/EnzoAlbornoz/pkl-go-generator/pkg/pklgen"
 )
 
@@ -34,7 +39,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
-		fmt.Fprintf(stderr, "usage: %s [-R] [-m module] [-o file] [-r type] [-t tag] [path ...]\n", name)
+		fmt.Fprintf(stderr, "usage: %s [-R] [-m module] [-o file] [-r type] [-t tag] [source ...]\n", name)
 		flags.PrintDefaults()
 	}
 	recursive := flags.Bool("R", false, "descend into subdirectories")
@@ -49,30 +54,94 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	warn := func(msg string) { fmt.Fprintf(stderr, "%s: warning: %s\n", name, msg) }
+	var loader remote.Loader
+	defer loader.Close()
 	g, err := pklgen.New(pklgen.Options{
 		Tag:    *tag,
 		Root:   *root,
 		Module: *module,
-		Warn:   func(msg string) { fmt.Fprintf(stderr, "%s: warning: %s\n", name, msg) },
+		Import: loader.Import,
+		Warn:   warn,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 2
 	}
-	if err := generate(g, flags.Args(), *recursive, *out, stdin, stdout); err != nil {
+	if err := generate(g, &loader, flags.Args(), *recursive, *out, stdin, stdout, warn); err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return 1
 	}
 	return 0
 }
 
-func generate(g *pklgen.Generator, paths []string, recursive bool, out string, stdin io.Reader, stdout io.Writer) error {
-	if len(paths) == 0 {
-		paths = []string{"-"}
+// source is a command-line argument: a local path, a remote package, or a
+// file fetched from a URL.
+type source struct {
+	arg string
+	pkg *remote.Package
+	src []byte
+}
+
+func generate(g *pklgen.Generator, loader *remote.Loader, args []string, recursive bool, out string, stdin io.Reader, stdout io.Writer, warn func(string)) error {
+	if len(args) == 0 {
+		args = []string{"-"}
 	}
+	// Download remote sources before adding any, so that types are
+	// generated in the order of the arguments.
+	var (
+		sources          []source
+		queries, imports []string
+	)
+	for _, arg := range args {
+		s := source{arg: arg}
+		if _, err := os.Stat(arg); err != nil && arg != "-" {
+			if p, ok := remote.Parse(arg); ok {
+				if err := p.Resolve(); err != nil {
+					return err
+				}
+				s.pkg = &p
+				queries = append(queries, p.Path+"@"+p.Version)
+			} else if u, err := url.Parse(arg); err == nil && (u.Scheme == "https" || u.Scheme == "http") {
+				if !strings.HasSuffix(u.Path, ".go") {
+					return fmt.Errorf("%s: not a Go file or a GitHub package", arg)
+				}
+				if s.src, err = remote.Fetch(arg); err != nil {
+					return err
+				}
+				paths, _ := remote.Imports(s.src) // AddFile reports syntax errors
+				imports = append(imports, paths...)
+			}
+		}
+		sources = append(sources, s)
+	}
+	if len(queries) > 0 {
+		if err := loader.Get(queries...); err != nil {
+			return err
+		}
+	}
+	if len(imports) > 0 {
+		if err := loader.Get(imports...); err != nil {
+			warn(fmt.Sprintf("cannot download imports: %v", err))
+		}
+	}
+
 	seen := map[string]bool{}
-	for _, p := range paths {
-		if err := add(g, p, recursive, stdin, seen); err != nil {
+	for _, s := range sources {
+		var err error
+		switch {
+		case s.pkg != nil:
+			var files []string
+			if s.pkg.File != "" {
+				files = append(files, s.pkg.File)
+			}
+			err = g.AddPackage(s.pkg.Path, files...)
+		case s.src != nil:
+			err = g.AddFile(s.arg, s.src)
+		default:
+			err = add(g, s.arg, recursive, stdin, seen)
+		}
+		if err != nil {
 			return err
 		}
 	}
