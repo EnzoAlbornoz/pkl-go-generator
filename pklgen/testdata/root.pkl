@@ -3,25 +3,39 @@
 /// Config configures the app. Its fields become module properties.
 module Config
 
+import "pkl:base"
+
 /// Server is untagged, so the property is named Server like the class.
 Server: Server2
 
-output_dir: String
+output_dir: base.String
 children: Listing<Config>?
 mode: Mode
+
+/// String and Mapping hide the built-in types at module level, so the
+/// schema imports pkl:base to reference them.
+String: base.String
+
+Mapping: base.Mapping<base.String, Listing<Int>>
 
 /// Config configures the app. Its fields become module properties.
 class Config {
   /// Server is untagged, so the property is named Server like the class.
   Server: Server2
 
-  output_dir: String
+  output_dir: base.String
   children: Listing<Config>?
   mode: Mode
+
+  /// String and Mapping hide the built-in types at module level, so the
+  /// schema imports pkl:base to reference them.
+  String: base.String
+
+  Mapping: base.Mapping<base.String, Listing<Int>>
 }
 
 class Server2 {
-  listen: String
+  listen: base.String
 }
 
-typealias Mode = String
+typealias Mode = base.String

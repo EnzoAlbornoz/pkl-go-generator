@@ -271,11 +271,10 @@ func (g *Generator) Generate(w io.Writer) error {
 		warned:    map[string]bool{},
 	}
 	var (
-		props      []prop
-		mod        = g.opts.Module
-		modDoc     string
-		hasModule  = mod != ""
-		reservedBy = "a built-in type"
+		props     []prop
+		mod       = g.opts.Module
+		modDoc    string
+		hasModule = mod != ""
 	)
 	if g.opts.Root != "" {
 		root, err := g.lookup(g.opts.Root)
@@ -297,7 +296,6 @@ func (g *Generator) Generate(w io.Writer) error {
 			mod = root.name
 		}
 		hasModule = true
-		reservedBy = "a module property"
 	} else {
 		for _, p := range g.pkgs {
 			for _, d := range p.decls {
@@ -315,12 +313,35 @@ func (g *Generator) Generate(w io.Writer) error {
 	decls := slices.Clone(s.queue)
 	slices.SortFunc(decls, func(a, b *decl) int { return cmp.Compare(a.pos, b.pos) })
 
+	// Module properties hide the types of the same name in the whole module,
+	// so hidden built-in types are referenced through an import of pkl:base.
 	taken := map[string]string{}
 	for _, n := range builtins {
 		taken[n] = "a built-in type"
 	}
+	hidden := map[string]bool{}
 	for _, p := range props {
-		taken[p.name] = reservedBy
+		if taken[p.name] != "" {
+			hidden[p.name] = true
+		}
+		taken[p.name] = "a module property"
+	}
+	if len(hidden) > 0 {
+		if taken["base"] != "" {
+			return errors.New(`property "base" clashes with the import of pkl:base`)
+		}
+		taken["base"] = "the import of pkl:base"
+		for _, p := range props {
+			qualify(p.typ, hidden)
+		}
+		for _, def := range s.defs {
+			if def.alias != nil {
+				qualify(def.alias, hidden)
+			}
+			for _, p := range def.props {
+				qualify(p.typ, hidden)
+			}
+		}
 	}
 	for _, d := range decls {
 		name := d.name
@@ -340,6 +361,9 @@ func (g *Generator) Generate(w io.Writer) error {
 		b.WriteString("\n")
 		writeDoc(&b, "", modDoc)
 		fmt.Fprintf(&b, "module %s\n", mod)
+	}
+	if len(hidden) > 0 {
+		b.WriteString("\nimport \"pkl:base\"\n")
 	}
 	if len(props) > 0 {
 		b.WriteString("\n")

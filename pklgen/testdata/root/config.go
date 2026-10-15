@@ -7,6 +7,11 @@ type Config struct {
 	Output   string   `json:"output_dir"`
 	Children []Config `json:"children,omitempty"`
 	Mode     Mode     `json:"mode"`
+
+	// String and Mapping hide the built-in types at module level, so the
+	// schema imports pkl:base to reference them.
+	String  string
+	Mapping map[string][]int
 }
 
 type Server struct {

@@ -66,6 +66,17 @@ func (t *ptype) String() string {
 	return s
 }
 
+// qualify references the built-in types of t that are hidden through the
+// base module.
+func qualify(t *ptype, hidden map[string]bool) {
+	if t.ref == nil && hidden[t.name] {
+		t.name = "base." + t.name
+	}
+	for _, a := range t.args {
+		qualify(a, hidden)
+	}
+}
+
 // builtins are the Pkl types that generated code may reference; user types
 // are renamed so that they do not shadow them.
 var builtins = []string{

@@ -1,1 +1,1 @@
-testdata/root/config.go:12:6: type Server renamed to Server2; the name is taken by a module property
+testdata/root/config.go:17:6: type Server renamed to Server2; the name is taken by a module property
