@@ -162,6 +162,7 @@ embedded one wins, as it does in Go.
 | `map[K]V`                            | `Mapping<String, V>` (json), `Mapping<K, V>` (yaml) |
 | `any`, interfaces                    | `Any`                                               |
 | `time.Time`                          | `String`                                            |
+| `net.IP`, `netip.Addr` and friends   | `String`                                            |
 | `time.Duration`                      | `Int` nanoseconds (json), `String` (yaml)           |
 | `json.Number`, `json.RawMessage`     | `Number`, `Any`                                     |
 | Named struct                         | `class`                                             |

@@ -376,6 +376,8 @@ func (s *state) wellKnown(importPath, name string) *ptype {
 	switch importPath + "." + name {
 	case "time.Time":
 		return builtin("String") // RFC 3339
+	case "net.IP", "net/netip.Addr", "net/netip.AddrPort", "net/netip.Prefix":
+		return builtin("String") // text form, such as "192.0.2.1"
 	case "time.Duration":
 		if s.opts.Tag == "yaml" {
 			return builtin("String") // such as "1m30s"

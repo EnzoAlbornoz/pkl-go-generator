@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"net/netip"
 	"time"
 
 	ext "example.com/external/types"
@@ -17,9 +18,10 @@ type Config struct {
 	Debug   *bool  `json:"debug"`
 	Retries int    `json:"retries,string"`
 	Ratio   float64
-	Level   Level         `json:"level"`
-	Timeout time.Duration `json:"timeout"`
-	Started time.Time     `json:"started,omitzero"`
+	Level   Level          `json:"level"`
+	Timeout time.Duration  `json:"timeout"`
+	Started time.Time      `json:"started,omitzero"`
+	Bind    netip.AddrPort `json:"bind"`
 
 	Tags   []string          `json:"tags"`
 	Labels map[string]string `json:"labels,omitempty"`
