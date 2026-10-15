@@ -1,0 +1,2 @@
+testdata/multi/model/model.go:14:6: type Status renamed to Status2; the name is taken by type api.Status
+testdata/multi/model/model.go:17:6: type String renamed to String2; the name is taken by a built-in type
