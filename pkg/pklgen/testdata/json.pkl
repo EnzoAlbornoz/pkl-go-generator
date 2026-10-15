@@ -12,6 +12,8 @@ class Config {
   retries: String
   Ratio: Float
   level: Level
+  zone: Zone
+  region: Region
   timeout: Int
   started: String?
   bind: String
@@ -80,3 +82,18 @@ typealias Admin = Owner
 class Defaults {
   mode: String
 }
+
+/// Zone is too wide for one line with its name.
+typealias Zone =
+  "europe-west1-a" | "europe-west1-b" | "europe-west1-c" | "europe-west1-d" | "europe-west1-e"
+
+/// Region is too wide for any line.
+typealias Region =
+  "europe-west1"
+    | "us-central1"
+    | "asia-east1"
+    | "australia-southeast1"
+    | "southamerica-east1"
+    | "northamerica-northeast1"
+    | "me-central1"
+    | "africa-south1"

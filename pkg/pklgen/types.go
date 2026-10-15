@@ -17,9 +17,10 @@ type state struct {
 	anon  map[*ast.StructType]*decl
 }
 
-// def is the Pkl definition of a declaration: a typealias when alias is
-// set, a class otherwise.
+// def is the Pkl definition of a declaration: a typealias of a union of
+// string literals or of another type, or else a class.
 type def struct {
+	union []string
 	alias *ptype
 	props []prop
 }
@@ -129,7 +130,7 @@ func (s *state) define(d *decl) *def {
 			for i, v := range values {
 				lits[i] = pklString(v)
 			}
-			return &def{alias: builtin(strings.Join(lits, " | "))}
+			return &def{union: lits}
 		}
 	}
 	t := s.typeOf(d.file, d.expr, d.name)

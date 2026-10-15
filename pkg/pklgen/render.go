@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // keywords are the Pkl words that cannot be used as plain identifiers.
@@ -59,6 +60,28 @@ func pklString(s string) string {
 	}
 	b.WriteByte('"')
 	return b.String()
+}
+
+// maxWidth is the line width of pkl format.
+const maxWidth = 100
+
+// writeUnion writes a typealias of a union of string literals, wrapped the
+// way pkl format wraps it when it is too wide.
+func writeUnion(b *strings.Builder, name string, lits []string) {
+	union := strings.Join(lits, " | ")
+	if line := "typealias " + name + " = " + union; utf8.RuneCountInString(line) <= maxWidth {
+		b.WriteString(line + "\n")
+		return
+	}
+	fmt.Fprintf(b, "typealias %s =\n", name)
+	if 2+utf8.RuneCountInString(union) <= maxWidth {
+		fmt.Fprintf(b, "  %s\n", union)
+		return
+	}
+	fmt.Fprintf(b, "  %s\n", lits[0])
+	for _, lit := range lits[1:] {
+		fmt.Fprintf(b, "    | %s\n", lit)
+	}
 }
 
 // writeDoc writes doc as a Pkl doc comment.

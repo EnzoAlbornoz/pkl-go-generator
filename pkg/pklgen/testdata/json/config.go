@@ -19,6 +19,8 @@ type Config struct {
 	Retries int    `json:"retries,string"`
 	Ratio   float64
 	Level   Level          `json:"level"`
+	Zone    Zone           `json:"zone"`
+	Region  Region         `json:"region"`
 	Timeout time.Duration  `json:"timeout"`
 	Started time.Time      `json:"started,omitzero"`
 	Bind    netip.AddrPort `json:"bind"`
@@ -118,3 +120,28 @@ type Defaults struct {
 }
 
 func (d *Defaults) UnmarshalJSON(b []byte) error { return nil }
+
+// Zone is too wide for one line with its name.
+type Zone string
+
+const (
+	ZoneA Zone = "europe-west1-a"
+	ZoneB Zone = "europe-west1-b"
+	ZoneC Zone = "europe-west1-c"
+	ZoneD Zone = "europe-west1-d"
+	ZoneE Zone = "europe-west1-e"
+)
+
+// Region is too wide for any line.
+type Region string
+
+const (
+	RegionEU Region = "europe-west1"
+	RegionUS Region = "us-central1"
+	RegionAS Region = "asia-east1"
+	RegionAU Region = "australia-southeast1"
+	RegionSA Region = "southamerica-east1"
+	RegionNA Region = "northamerica-northeast1"
+	RegionME Region = "me-central1"
+	RegionAF Region = "africa-south1"
+)

@@ -514,6 +514,10 @@ func (g *Generator) Generate(w io.Writer) error {
 		b.WriteString("\n")
 		writeDoc(&b, "", d.doc)
 		def := s.defs[d]
+		if def.union != nil {
+			writeUnion(&b, ident(d.pklName), def.union)
+			continue
+		}
 		if def.alias != nil {
 			fmt.Fprintf(&b, "typealias %s = %s\n", ident(d.pklName), def.alias)
 			continue

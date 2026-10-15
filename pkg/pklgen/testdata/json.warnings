@@ -1,2 +1,2 @@
-testdata/json/config.go:50:11: unknown type ext.Thing; using Any
-testdata/json/config.go:51:2: field Done cannot be encoded; skipping
+testdata/json/config.go:52:11: unknown type ext.Thing; using Any
+testdata/json/config.go:53:2: field Done cannot be encoded; skipping
