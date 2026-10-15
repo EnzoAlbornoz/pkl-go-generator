@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/EnzoAlbornoz/pkl-go-generator/pklgen"
+	"github.com/EnzoAlbornoz/pkl-go-generator/pkg/pklgen"
 )
 
 const name = "pkl-go-generator"

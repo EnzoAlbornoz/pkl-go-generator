@@ -8,7 +8,7 @@ that Pkl renders from the schema decodes straight into your Go types.
 ## Install
 
 ```sh
-go install github.com/EnzoAlbornoz/pkl-go-generator@latest
+go install github.com/EnzoAlbornoz/pkl-go-generator/cmd/pkl-go-generator@latest
 ```
 
 ## Usage
@@ -188,6 +188,8 @@ those matter.
 The generator is also available as a Go package:
 
 ```go
+import "github.com/EnzoAlbornoz/pkl-go-generator/pkg/pklgen"
+
 g, err := pklgen.New(pklgen.Options{Tag: "yaml", Root: "Config"})
 if err != nil {
 	return err
@@ -198,11 +200,11 @@ if err := g.AddFile("config.go", src); err != nil {
 return g.Generate(os.Stdout)
 ```
 
-See [`pklgen`](https://pkg.go.dev/github.com/EnzoAlbornoz/pkl-go-generator/pklgen).
+See [`pklgen`](https://pkg.go.dev/github.com/EnzoAlbornoz/pkl-go-generator/pkg/pklgen).
 
 ## Development
 
 ```sh
 go test ./...                  # the Pkl tests run when pkl is in PATH
-go test ./pklgen -update       # rewrite the golden files in pklgen/testdata
+go test ./pkg/pklgen -update   # rewrite the golden files in pkg/pklgen/testdata
 ```
