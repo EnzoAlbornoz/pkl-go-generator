@@ -3,6 +3,7 @@
 // Usage:
 //
 //	pkl-go-generator [-R] [-m module] [-o file] [-r type] [-t tag] [source ...]
+//	pkl-go-generator -V
 //
 // Each source is a Go file or a directory of them, an import path with an
 // optional "@version" suffix, or the URL of a Go file or of a GitHub
@@ -21,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/EnzoAlbornoz/pkl-go-generator/internal/remote"
@@ -28,6 +30,9 @@ import (
 )
 
 const name = "pkl-go-generator"
+
+// version is set by release builds with -ldflags "-X main.version=v1.2.3".
+var version string
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -40,9 +45,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
 		fmt.Fprintf(stderr, "usage: %s [-R] [-m module] [-o file] [-r type] [-t tag] [source ...]\n", name)
+		fmt.Fprintf(stderr, "       %s -V\n", name)
 		flags.PrintDefaults()
 	}
 	recursive := flags.Bool("R", false, "descend into subdirectories")
+	printVersion := flags.Bool("V", false, "print the version and exit")
 	module := flags.String("m", "", "set the module `name` (default: the root type)")
 	out := flags.String("o", "", "write to `file` instead of standard output")
 	root := flags.String("r", "", "make the fields of struct `type` module properties")
@@ -52,6 +59,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 0
 		}
 		return 2
+	}
+	if *printVersion {
+		fmt.Fprintf(stdout, "%s %s\n", name, buildVersion())
+		return 0
 	}
 
 	warn := func(msg string) { fmt.Fprintf(stderr, "%s: warning: %s\n", name, msg) }
@@ -73,6 +84,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// buildVersion returns the version set at link time or, for a build by
+// "go install module@version", the module version.
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "(devel)"
 }
 
 // source is a command-line argument: a local path, a remote package, or a

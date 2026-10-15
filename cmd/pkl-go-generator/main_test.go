@@ -109,6 +109,15 @@ func TestExitStatus(t *testing.T) {
 	}
 }
 
+func TestVersion(t *testing.T) {
+	defer func(v string) { version = v }(version)
+	version = "v1.2.3"
+	code, out, stderr := runCmd("", "-V")
+	if code != 0 || out != "pkl-go-generator v1.2.3\n" || stderr != "" {
+		t.Errorf("exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+}
+
 func TestWarnings(t *testing.T) {
 	src := "package p\n\ntype T struct{ C chan int }\n"
 	code, out, stderr := runCmd(src)

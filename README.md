@@ -15,6 +15,7 @@ go install github.com/EnzoAlbornoz/pkl-go-generator/cmd/pkl-go-generator@latest
 
 ```
 pkl-go-generator [-R] [-m module] [-o file] [-r type] [-t tag] [source ...]
+pkl-go-generator -V
 ```
 
 Each source is a Go file or a directory of them, or a remote package: an
@@ -30,6 +31,7 @@ status is 0 on success, 1 on failure and 2 on invalid usage.
 | `-o file`   | Write to `file` instead of standard output.                    |
 | `-r type`   | Make the fields of struct `type` module properties.            |
 | `-t tag`    | Use the `json` (default) or `yaml` struct tag for field names. |
+| `-V`        | Print the version and exit.                                    |
 
 Without `-r`, every exported struct becomes a class. With `-r`, the fields of
 that one struct become module properties, and only the types it uses are
