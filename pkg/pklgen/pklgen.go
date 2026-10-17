@@ -28,8 +28,14 @@ type Options struct {
 
 	// Root names a struct whose fields become module properties, so that
 	// configurations can amend the generated module. Only the types it
-	// reaches are generated. The form "pkg.Name" selects between packages.
+	// reaches are generated, along with Types. The form "pkg.Name" selects
+	// between packages.
 	Root string
+
+	// Types names structs to generate as classes, in the forms of Root.
+	// Only they and the types they reach are generated, instead of every
+	// exported struct of the added files.
+	Types []string
 
 	// Module is the name in the module clause. It defaults to Root.
 	Module string
@@ -434,7 +440,13 @@ func (g *Generator) Generate(w io.Writer) error {
 			mod = root.name
 		}
 		hasModule = true
-	} else {
+	}
+	for _, name := range g.opts.Types {
+		if err := s.useStruct(name); err != nil {
+			return err
+		}
+	}
+	if g.opts.Root == "" && len(g.opts.Types) == 0 {
 		for _, p := range slices.Clone(g.pkgs) {
 			for _, d := range p.decls {
 				if !d.file.root || !ast.IsExported(d.name) || d.generic || s.marshaled(d) != nil {

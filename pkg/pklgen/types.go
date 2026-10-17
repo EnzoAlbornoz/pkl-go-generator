@@ -1,6 +1,7 @@
 package pklgen
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -110,6 +111,25 @@ func (s *state) use(d *decl) {
 		s.defs[d] = nil
 		s.queue = append(s.queue, d)
 	}
+}
+
+// useStruct schedules the struct named "Name" or "pkg.Name" for generation.
+func (s *state) useStruct(name string) error {
+	d, err := s.lookup(name)
+	if err != nil {
+		return err
+	}
+	if _, st := s.structOf(d); st == nil {
+		return fmt.Errorf("%s is not a struct type", name)
+	}
+	if d.generic {
+		return fmt.Errorf("%s is generic; generic types map to Any", name)
+	}
+	if t := s.marshaled(d); t != nil {
+		return fmt.Errorf("%s has a custom marshaler; it maps to %s", name, t)
+	}
+	s.use(d)
+	return nil
 }
 
 // drain generates the scheduled declarations, and those they reference.

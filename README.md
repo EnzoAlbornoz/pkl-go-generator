@@ -35,7 +35,7 @@ go install github.com/EnzoAlbornoz/pkl-go-generator/cmd/pkl-go-generator@latest
 ## Usage
 
 ```
-pkl-go-generator [-R] [-m module] [-o file] [-r type] [-t tag] [source ...]
+pkl-go-generator [-R] [-f type]... [-m module] [-o file] [-r type] [-t tag] [source ...]
 pkl-go-generator -V
 ```
 
@@ -48,16 +48,20 @@ status is 0 on success, 1 on failure and 2 on invalid usage.
 | Option      | Meaning                                                        |
 | ----------- | -------------------------------------------------------------- |
 | `-R`        | Descend into subdirectories.                                   |
+| `-f type`   | Generate only struct `type` and the types it uses. Repeatable. |
 | `-m module` | Set the module name. Defaults to the root type.                |
 | `-o file`   | Write to `file` instead of standard output.                    |
 | `-r type`   | Make the fields of struct `type` module properties.            |
 | `-t tag`    | Use the `json` (default) or `yaml` struct tag for field names. |
 | `-V`        | Print the version and exit.                                    |
 
-Without `-r`, every exported struct becomes a class. With `-r`, the fields of
-that one struct become module properties, and only the types it uses are
-generated. The result is a module that a configuration file can amend. Use the
-form `pkg.Type` when several packages declare the type.
+Without `-r` or `-f`, every exported struct becomes a class. With `-r`, the
+fields of that one struct become module properties, and only the types it uses
+are generated. The result is a module that a configuration file can amend. With
+`-f`, only the named structs and the types they use are generated, as classes;
+repeat it to name several, as in `-f Server -f Client`. Given with `-r`, these
+classes are generated next to the module properties. Use the form `pkg.Type`
+when several packages declare the type.
 
 Directories are read the way the `go` command reads them: `_test.go` files and
 names starting with `.` or `_` are skipped, and so are `testdata` and `vendor`

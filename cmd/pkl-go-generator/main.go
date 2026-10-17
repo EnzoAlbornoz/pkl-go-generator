@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	pkl-go-generator [-R] [-m module] [-o file] [-r type] [-t tag] [source ...]
+//	pkl-go-generator [-R] [-f type]... [-m module] [-o file] [-r type] [-t tag] [source ...]
 //	pkl-go-generator -V
 //
 // Each source is a Go file or a directory of them, an import path with an
@@ -44,12 +44,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
-		fmt.Fprintf(stderr, "usage: %s [-R] [-m module] [-o file] [-r type] [-t tag] [source ...]\n", name)
+		fmt.Fprintf(stderr, "usage: %s [-R] [-f type]... [-m module] [-o file] [-r type] [-t tag] [source ...]\n", name)
 		fmt.Fprintf(stderr, "       %s -V\n", name)
 		flags.PrintDefaults()
 	}
 	recursive := flags.Bool("R", false, "descend into subdirectories")
 	printVersion := flags.Bool("V", false, "print the version and exit")
+	var types []string
+	flags.Func("f", "generate only struct `type` and the types it uses; may be repeated", func(s string) error {
+		types = append(types, s)
+		return nil
+	})
 	module := flags.String("m", "", "set the module `name` (default: the root type)")
 	out := flags.String("o", "", "write to `file` instead of standard output")
 	root := flags.String("r", "", "make the fields of struct `type` module properties")
@@ -71,6 +76,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	g, err := pklgen.New(pklgen.Options{
 		Tag:    *tag,
 		Root:   *root,
+		Types:  types,
 		Module: *module,
 		Import: loader.Import,
 		Warn:   warn,
