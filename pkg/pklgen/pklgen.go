@@ -41,6 +41,18 @@ type Options struct {
 	// Module is the name in the module clause. It defaults to Root.
 	Module string
 
+	// OpenModule declares the module open, so that Pkl modules can extend
+	// it. It requires a module name, from Root or Module.
+	OpenModule bool
+
+	// OpenClasses declares every generated class open, so that Pkl classes
+	// can extend them.
+	OpenClasses bool
+
+	// OpenTypes names structs whose classes are declared open, in the forms
+	// of Root. Generate fails if one of them is not generated as a class.
+	OpenTypes []string
+
 	// TypeMap maps Go types to Pkl types that replace their generated form,
 	// such as "github.com/google/uuid.UUID" to "String(length == 36)". It
 	// names a Go type by its import path or, for the files added by AddFile,
@@ -122,6 +134,9 @@ func New(opts Options) (*Generator, error) {
 	}
 	if opts.Module != "" && !moduleName.MatchString(opts.Module) {
 		return nil, fmt.Errorf("invalid module name %q", opts.Module)
+	}
+	if opts.OpenModule && opts.Root == "" && opts.Module == "" {
+		return nil, errors.New("cannot open a module without a name; set a root type or a module name")
 	}
 	typeMap := map[string]*pklType{}
 	for _, goType := range slices.Sorted(maps.Keys(opts.TypeMap)) {
@@ -488,6 +503,15 @@ func (g *Generator) Generate(w io.Writer) error {
 	}
 	s.drain()
 
+	open := map[*decl]bool{}
+	for _, name := range g.opts.OpenTypes {
+		d, err := s.openClass(name)
+		if err != nil {
+			return err
+		}
+		open[d] = true
+	}
+
 	decls := slices.Clone(s.queue)
 	slices.SortFunc(decls, func(a, b *decl) int { return cmp.Compare(a.pos, b.pos) })
 
@@ -546,6 +570,9 @@ func (g *Generator) Generate(w io.Writer) error {
 	if hasModule {
 		b.WriteString("\n")
 		writeDoc(&b, "", modDoc)
+		if g.opts.OpenModule {
+			b.WriteString("open ")
+		}
 		fmt.Fprintf(&b, "module %s\n", mod)
 	}
 	if len(hidden) > 0 {
@@ -570,6 +597,9 @@ func (g *Generator) Generate(w io.Writer) error {
 		if def.alias != nil {
 			fmt.Fprintf(&b, "typealias %s = %s\n", ident(d.pklName), def.alias)
 			continue
+		}
+		if g.opts.OpenClasses || open[d] {
+			b.WriteString("open ")
 		}
 		fmt.Fprintf(&b, "class %s {", ident(d.pklName))
 		if len(def.props) > 0 {

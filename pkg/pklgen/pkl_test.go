@@ -111,12 +111,16 @@ extra { note = "hi" }
 region = "eu"
 `
 
-func TestRoundTrip(t *testing.T) {
+// settingsSchema generates a module from the Settings type of this file.
+func settingsSchema(t *testing.T, opts Options) string {
+	t.Helper()
 	src, err := os.ReadFile("pkl_test.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := New(Options{Root: "Settings", Warn: func(msg string) { t.Error(msg) }})
+	opts.Root = "Settings"
+	opts.Warn = func(msg string) { t.Error(msg) }
+	g, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,14 +131,13 @@ func TestRoundTrip(t *testing.T) {
 	if err := g.Generate(&schema); err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "Settings.pkl"), schema.String())
+	return schema.String()
+}
 
-	writeFile(t, filepath.Join(dir, "app.pkl"), settingsPkl)
-	out, err := pkl(t, dir, "eval", "-f", "json", "app.pkl")
-	if err != nil {
-		t.Fatalf("%v\nschema:\n%s", err, schema.String())
-	}
+// checkSettings decodes out, rejecting unknown fields, and compares the
+// result with the values that settingsPkl sets.
+func checkSettings(t *testing.T, out string) {
+	t.Helper()
 	dec := json.NewDecoder(strings.NewReader(out))
 	dec.DisallowUnknownFields()
 	var got Settings
@@ -157,6 +160,19 @@ func TestRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got  %+v\nwant %+v", got, want)
 	}
+}
+
+func TestRoundTrip(t *testing.T) {
+	schema := settingsSchema(t, Options{})
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Settings.pkl"), schema)
+
+	writeFile(t, filepath.Join(dir, "app.pkl"), settingsPkl)
+	out, err := pkl(t, dir, "eval", "-f", "json", "app.pkl")
+	if err != nil {
+		t.Fatalf("%v\nschema:\n%s", err, schema)
+	}
+	checkSettings(t, out)
 
 	// The schema rejects what Go would not decode, or would encode
 	// differently.
@@ -175,6 +191,48 @@ func TestRoundTrip(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s: got error %v, want %q", tt.new, err, tt.want)
 		}
+	}
+}
+
+// openBasePkl extends the module generated from Settings with a parameter
+// for configurations to set, and a subclass of the open class Upstream.
+const openBasePkl = `extends "Settings.pkl"
+
+hidden env: "dev" | "prod"
+
+debug = env == "dev"
+
+class Host extends Upstream {
+  hidden host: String
+  url = "http://\(host)"
+}
+`
+
+// TestOpenPkl checks that Pkl modules can extend the open module and
+// classes, and that the configurations amending them still decode.
+func TestOpenPkl(t *testing.T) {
+	schema := settingsSchema(t, Options{OpenModule: true, OpenTypes: []string{"Upstream"}})
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Settings.pkl"), schema)
+	writeFile(t, filepath.Join(dir, "Base.pkl"), openBasePkl)
+
+	app := strings.NewReplacer(
+		`amends "Settings.pkl"`, `amends "Base.pkl"`,
+		`debug = true`, `env = "dev"`,
+		`upstream { url = "http://up"; weight = 0.5 }`, `upstream = new Host { host = "up"; weight = 0.5 }`,
+	).Replace(settingsPkl)
+	writeFile(t, filepath.Join(dir, "app.pkl"), app)
+	out, err := pkl(t, dir, "eval", "-f", "json", "app.pkl")
+	if err != nil {
+		t.Fatalf("%v\nschema:\n%s", err, schema)
+	}
+	checkSettings(t, out)
+
+	// The classes not named in OpenTypes stay closed.
+	writeFile(t, filepath.Join(dir, "Base.pkl"), openBasePkl+"\nclass Note extends SettingsExtra {}\n")
+	_, err = pkl(t, dir, "eval", "-f", "json", "app.pkl")
+	if want := "Cannot extend non-open class"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("got error %v, want %q", err, want)
 	}
 }
 

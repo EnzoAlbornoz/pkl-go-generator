@@ -35,7 +35,8 @@ go install github.com/EnzoAlbornoz/pkl-go-generator/cmd/pkl-go-generator@latest
 ## Usage
 
 ```
-pkl-go-generator [-R] [-f type]... [-m module] [-map gotype=pkltype]... [-o file] [-r type] [-t tag] [source ...]
+pkl-go-generator [-R] [-f type]... [-m module] [-map gotype=pkltype]... [-o file]
+                 [-open type]... [-open-classes] [-open-module] [-r type] [-t tag] [source ...]
 pkl-go-generator -V
 ```
 
@@ -52,6 +53,9 @@ status is 0 on success, 1 on failure and 2 on invalid usage.
 | `-m module`           | Set the module name. Defaults to the root type.                |
 | `-map gotype=pkltype` | Generate Go type `gotype` as Pkl type `pkltype`. Repeatable.   |
 | `-o file`             | Write to `file` instead of standard output.                    |
+| `-open type`          | Declare the class of struct `type` open. Repeatable.           |
+| `-open-classes`       | Declare every class open.                                      |
+| `-open-module`        | Declare the module open. Needs `-r` or `-m`.                   |
 | `-r type`             | Make the fields of struct `type` module properties.            |
 | `-t tag`              | Use the `json` (default) or `yaml` struct tag for field names. |
 | `-V`                  | Print the version and exit.                                    |
@@ -192,6 +196,56 @@ To keep the schema up to date, add a directive next to the type:
 ```go
 //go:generate pkl-go-generator -t yaml -r Config -o Config.pkl config.go
 ```
+
+## Extending the schema
+
+Pkl modules and classes are closed by default: configurations can amend them,
+but other Pkl code cannot extend them. `-open-module` declares the module open,
+`-open type` declares the class of one struct open, and `-open-classes`
+declares every class open. With the example above,
+`pkl-go-generator -t yaml -r Config -open-module -open TLS -o Config.pkl config.go`
+writes `open module Config` and `open class TLS`, and leaves `User` closed.
+
+A module can then extend the schema with parameters and classes of its own:
+
+```pkl
+// Base.pkl
+extends "Config.pkl"
+
+/// The environment, which each configuration sets.
+hidden env: "dev" | "prod"
+
+level = if (env == "prod") "info" else "debug"
+
+/// TLS files in a directory.
+class DirTLS extends TLS {
+  hidden dir: String
+  cert = "\(dir)/cert.pem"
+  key = "\(dir)/key.pem"
+}
+```
+
+and configurations amend it instead of the schema:
+
+```pkl
+// prod.pkl
+amends "Base.pkl"
+
+env = "prod"
+addr = ":8443"
+tls = new DirTLS { dir = "/etc/tls" }
+```
+
+Declare the properties that an extension adds `hidden`, so that Pkl does not
+render them: Go would ignore them, or reject them when decoding with
+`DisallowUnknownFields`. `local` properties are not visible to the
+configurations that amend `Base.pkl`.
+
+The command fails when it cannot declare something open. `-open-module` needs
+a module name, from `-r` or `-m`. `-open` names a struct the way `-f` does, and
+the struct must be generated as a class: naming the root type, whose fields are
+module properties, a struct that is not generated, or one generated as another
+type, such as with `-map` or a custom marshaler, is an error.
 
 ## Mapping
 

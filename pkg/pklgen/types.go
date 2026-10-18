@@ -29,6 +29,11 @@ type def struct {
 	props []prop
 }
 
+// class reports whether d is a class rather than a typealias.
+func (d *def) class() bool {
+	return d.union == nil && d.alias == nil && d.text == nil
+}
+
 // prop is a Pkl property generated from a struct field.
 type prop struct {
 	name  string // the encoded key
@@ -132,10 +137,44 @@ func (s *state) useStruct(name string) error {
 	if err != nil {
 		return err
 	}
-	if s.mapping(d) != nil {
-		s.use(d)
-		return nil
+	if s.mapping(d) == nil {
+		if err := s.checkStruct(d, name); err != nil {
+			return err
+		}
 	}
+	s.use(d)
+	return nil
+}
+
+// openClass returns the declaration of the struct named "Name" or
+// "pkg.Name", which must have been generated as a class.
+func (s *state) openClass(name string) (*decl, error) {
+	d, err := s.lookup(name)
+	if err != nil {
+		return nil, err
+	}
+	if s.mapping(d) != nil {
+		return nil, fmt.Errorf("%s is mapped to a Pkl type, so it cannot be open", name)
+	}
+	if err := s.checkStruct(d, name); err != nil {
+		return nil, err
+	}
+	def, ok := s.defs[d]
+	if !ok {
+		if root, _ := s.lookup(s.opts.Root); root == d {
+			return nil, fmt.Errorf("%s is the root type, whose fields are module properties; open the module instead", name)
+		}
+		return nil, fmt.Errorf("%s is not generated, so it cannot be open", name)
+	}
+	if !def.class() {
+		return nil, fmt.Errorf("%s is generated as a typealias, so it cannot be open", name)
+	}
+	return d, nil
+}
+
+// checkStruct returns why the type d, named name, does not become a class:
+// it is not a struct, is generic or has a custom marshaler.
+func (s *state) checkStruct(d *decl, name string) error {
 	if _, st := s.structOf(d); st == nil {
 		return fmt.Errorf("%s is not a struct type", name)
 	}
@@ -145,7 +184,6 @@ func (s *state) useStruct(name string) error {
 	if t := s.marshaled(d); t != nil {
 		return fmt.Errorf("%s has a custom marshaler; it maps to %s", name, t)
 	}
-	s.use(d)
 	return nil
 }
 

@@ -1,0 +1,1 @@
+testdata/open/config.go:16:6: type Server renamed to Server2; the name is taken by a module property

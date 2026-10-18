@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	pkl-go-generator [-R] [-f type]... [-m module] [-map gotype=pkltype]... [-o file] [-r type] [-t tag] [source ...]
+//	pkl-go-generator [-R] [-f type]... [-m module] [-map gotype=pkltype]... [-o file] [-open type]... [-open-classes] [-open-module] [-r type] [-t tag] [source ...]
 //	pkl-go-generator -V
 //
 // Each source is a Go file or a directory of them, an import path with an
@@ -44,7 +44,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
-		fmt.Fprintf(stderr, "usage: %s [-R] [-f type]... [-m module] [-map gotype=pkltype]... [-o file] [-r type] [-t tag] [source ...]\n", name)
+		fmt.Fprintf(stderr, "usage: %s [-R] [-f type]... [-m module] [-map gotype=pkltype]... [-o file] [-open type]... [-open-classes] [-open-module] [-r type] [-t tag] [source ...]\n", name)
 		fmt.Fprintf(stderr, "       %s -V\n", name)
 		flags.PrintDefaults()
 	}
@@ -66,6 +66,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return nil
 	})
 	out := flags.String("o", "", "write to `file` instead of standard output")
+	var openTypes []string
+	flags.Func("open", "declare the class of struct `type` open; may be repeated", func(s string) error {
+		openTypes = append(openTypes, s)
+		return nil
+	})
+	openClasses := flags.Bool("open-classes", false, "declare every class open")
+	openModule := flags.Bool("open-module", false, "declare the module open; needs a module name")
 	root := flags.String("r", "", "make the fields of struct `type` module properties")
 	tag := flags.String("t", "json", "use the `tag` struct tag for field names: json or yaml")
 	if err := flags.Parse(args); err != nil {
@@ -83,13 +90,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var loader remote.Loader
 	defer loader.Close()
 	g, err := pklgen.New(pklgen.Options{
-		Tag:     *tag,
-		Root:    *root,
-		Types:   types,
-		Module:  *module,
-		TypeMap: typeMap,
-		Import:  loader.Import,
-		Warn:    warn,
+		Tag:         *tag,
+		Root:        *root,
+		Types:       types,
+		Module:      *module,
+		OpenModule:  *openModule,
+		OpenClasses: *openClasses,
+		OpenTypes:   openTypes,
+		TypeMap:     typeMap,
+		Import:      loader.Import,
+		Warn:        warn,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
