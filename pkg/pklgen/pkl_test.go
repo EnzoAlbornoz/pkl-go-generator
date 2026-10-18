@@ -178,6 +178,43 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+// typeMapPkl amends testdata/typemap.pkl.
+const typeMapPkl = `amends "schema.pkl"
+
+id = "123e4567-e89b-12d3-a456-426614174000"
+port = "http"
+ports = "80-443"
+timeout = 5_000_000_000
+String = "s"
+`
+
+// TestTypeMapPkl checks that the Pkl types of the type map constrain
+// values, also where module properties hide the types they refer to.
+func TestTypeMapPkl(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("testdata", "typemap.pkl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "schema.pkl"), string(src))
+	writeFile(t, filepath.Join(dir, "app.pkl"), typeMapPkl)
+	if _, err := pkl(t, dir, "eval", "-f", "json", "app.pkl"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ old, new, want string }{
+		{`id = "123e4567-e89b-12d3-a456-426614174000"`, `id = "123"`, "`length == 36` violated"},
+		{`port = "http"`, `port = true`, "Expected value of type"},
+		{`ports = "80-443"`, `ports = "80"`, "`matches(Regex(#\"\\d+-\\d+\"#))` violated"},
+		{`timeout = 5_000_000_000`, `timeout = -1`, "`this >= 0` violated"},
+	} {
+		writeFile(t, filepath.Join(dir, "bad.pkl"), strings.Replace(typeMapPkl, tt.old, tt.new, 1))
+		_, err := pkl(t, dir, "eval", "-f", "json", "bad.pkl")
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: got error %v, want %q", tt.new, err, tt.want)
+		}
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

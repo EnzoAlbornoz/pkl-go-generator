@@ -13,16 +13,19 @@ import (
 // state holds the progress of one Generate call.
 type state struct {
 	*Generator
-	queue []*decl // declarations to generate, in discovery order
-	defs  map[*decl]*def
-	anon  map[*ast.StructType]*decl
+	queue  []*decl // declarations to generate, in discovery order
+	defs   map[*decl]*def
+	anon   map[*ast.StructType]*decl
+	mapped map[string]*decl // declarations of the types of TypeMap, by key
 }
 
 // def is the Pkl definition of a declaration: a typealias of a union of
-// string literals or of another type, or else a class.
+// string literals, of another type or of the type that TypeMap gives it,
+// or else a class.
 type def struct {
 	union []string
 	alias *ptype
+	text  *pklType
 	props []prop
 }
 
@@ -105,19 +108,33 @@ var basics = map[string]string{
 	"any":     "Any",
 }
 
-// use schedules d for generation.
-func (s *state) use(d *decl) {
+// use schedules d for generation, and returns the declaration to refer to:
+// d or, if TypeMap maps its type, the declaration of the type used first,
+// which differs from d when d stands in for a package not yet imported.
+func (s *state) use(d *decl) *decl {
+	if k := typeKey(d); s.typeMap[k] != nil {
+		if m := s.mapped[k]; m != nil {
+			return m
+		}
+		s.mapped[k] = d
+	}
 	if _, ok := s.defs[d]; !ok {
 		s.defs[d] = nil
 		s.queue = append(s.queue, d)
 	}
+	return d
 }
 
 // useStruct schedules the struct named "Name" or "pkg.Name" for generation.
+// A type that TypeMap maps may be of any kind.
 func (s *state) useStruct(name string) error {
 	d, err := s.lookup(name)
 	if err != nil {
 		return err
+	}
+	if s.mapping(d) != nil {
+		s.use(d)
+		return nil
 	}
 	if _, st := s.structOf(d); st == nil {
 		return fmt.Errorf("%s is not a struct type", name)
@@ -141,6 +158,9 @@ func (s *state) drain() {
 }
 
 func (s *state) define(d *decl) *def {
+	if t := s.mapping(d); t != nil {
+		return &def{text: t}
+	}
 	switch e := ast.Unparen(d.expr).(type) {
 	case *ast.StructType:
 		return &def{props: s.fields(d, e)}
@@ -318,6 +338,9 @@ func (s *state) typeOf(f *file, e ast.Expr, hint string) *ptype {
 		s.warnf(e.Pos(), "unknown type %s; using Any", e.Name)
 		return builtin("Any")
 	case *ast.SelectorExpr:
+		if t := s.mappedRef(f, e); t != nil {
+			return t
+		}
 		q, ok := e.X.(*ast.Ident)
 		if !ok {
 			return nil
@@ -360,23 +383,37 @@ func (s *state) typeOf(f *file, e ast.Expr, hint string) *ptype {
 		return s.ref(d, e)
 	case *ast.InterfaceType:
 		return builtin("Any")
-	case *ast.IndexExpr, *ast.IndexListExpr:
-		s.warnf(e.Pos(), "generic type %s; using Any", types.ExprString(e))
-		return builtin("Any")
+	case *ast.IndexExpr:
+		return s.instance(f, e, e.X)
+	case *ast.IndexListExpr:
+		return s.instance(f, e, e.X)
 	}
 	return nil // channels and functions
 }
 
-func (s *state) ref(d *decl, at ast.Node) *ptype {
-	if t := s.marshaled(d); t != nil {
+// instance converts e, an instance of the generic type x, to Any unless
+// TypeMap maps x.
+func (s *state) instance(f *file, e, x ast.Expr) *ptype {
+	if t := s.mappedRef(f, x); t != nil {
 		return t
 	}
-	if d.generic {
-		s.warnf(at.Pos(), "generic type %s; using Any", d.name)
-		return builtin("Any")
+	s.warnf(e.Pos(), "generic type %s; using Any", types.ExprString(e))
+	return builtin("Any")
+}
+
+// ref returns a reference to the type that d declares. TypeMap takes
+// precedence over custom marshalers and type parameters.
+func (s *state) ref(d *decl, at ast.Node) *ptype {
+	if s.mapping(d) == nil {
+		if t := s.marshaled(d); t != nil {
+			return t
+		}
+		if d.generic {
+			s.warnf(at.Pos(), "generic type %s; using Any", d.name)
+			return builtin("Any")
+		}
 	}
-	s.use(d)
-	return &ptype{ref: d}
+	return &ptype{ref: s.use(d)}
 }
 
 // marshaled returns the type that a declared type with a custom marshaler

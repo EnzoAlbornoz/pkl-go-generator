@@ -12,6 +12,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"maps"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -40,6 +41,15 @@ type Options struct {
 	// Module is the name in the module clause. It defaults to Root.
 	Module string
 
+	// TypeMap maps Go types to Pkl types that replace their generated form,
+	// such as "github.com/google/uuid.UUID" to "String(length == 36)". It
+	// names a Go type by its import path or, for the files added by AddFile,
+	// its package name, followed by a dot and its name. Each mapped type
+	// that is used becomes a typealias of its Pkl type, which may refer to
+	// the Pkl standard library but not to the generated types. TypeMap takes
+	// precedence over the built-in mapping rules.
+	TypeMap map[string]string
+
 	// Import, if non-nil, returns the source files of the package with the
 	// given import path, or none if the package is unknown. Generated types
 	// that refer to an imported package then load it, and only the types
@@ -59,11 +69,12 @@ type File struct {
 // A Generator collects Go source files and generates a Pkl module from the
 // types they declare.
 type Generator struct {
-	opts   Options
-	fset   *token.FileSet
-	pkgs   []*pkg
-	byPath map[string]*pkg // by import path; nil if the import failed
-	warned map[string]bool
+	opts    Options
+	typeMap map[string]*pklType // parsed from opts.TypeMap
+	fset    *token.FileSet
+	pkgs    []*pkg
+	byPath  map[string]*pkg // by import path; nil if the import failed
+	warned  map[string]bool
 }
 
 // pkg holds the declarations of one Go package.
@@ -112,11 +123,24 @@ func New(opts Options) (*Generator, error) {
 	if opts.Module != "" && !moduleName.MatchString(opts.Module) {
 		return nil, fmt.Errorf("invalid module name %q", opts.Module)
 	}
+	typeMap := map[string]*pklType{}
+	for _, goType := range slices.Sorted(maps.Keys(opts.TypeMap)) {
+		i := strings.LastIndex(goType, ".")
+		if i <= 0 || !token.IsIdentifier(goType[i+1:]) {
+			return nil, fmt.Errorf("invalid Go type %q in type map: want path.Name", goType)
+		}
+		t, err := parsePklType(opts.TypeMap[goType])
+		if err != nil {
+			return nil, fmt.Errorf("invalid Pkl type for %s: %v", goType, err)
+		}
+		typeMap[goType] = t
+	}
 	return &Generator{
-		opts:   opts,
-		fset:   token.NewFileSet(),
-		byPath: map[string]*pkg{},
-		warned: map[string]bool{},
+		opts:    opts,
+		typeMap: typeMap,
+		fset:    token.NewFileSet(),
+		byPath:  map[string]*pkg{},
+		warned:  map[string]bool{},
 	}, nil
 }
 
@@ -413,6 +437,7 @@ func (g *Generator) Generate(w io.Writer) error {
 		Generator: g,
 		defs:      map[*decl]*def{},
 		anon:      map[*ast.StructType]*decl{},
+		mapped:    map[string]*decl{},
 	}
 	var (
 		props     []prop
@@ -468,9 +493,17 @@ func (g *Generator) Generate(w io.Writer) error {
 
 	// Module properties hide the types of the same name in the whole module,
 	// so hidden built-in types are referenced through an import of pkl:base.
+	// The types of TypeMap may refer to more of them.
 	taken := map[string]string{}
 	for _, n := range builtins {
 		taken[n] = "a built-in type"
+	}
+	for _, d := range decls {
+		if t := s.defs[d].text; t != nil {
+			for _, n := range t.names() {
+				taken[n] = "a built-in type"
+			}
+		}
 	}
 	hidden := map[string]bool{}
 	for _, p := range props {
@@ -526,6 +559,10 @@ func (g *Generator) Generate(w io.Writer) error {
 		b.WriteString("\n")
 		writeDoc(&b, "", d.doc)
 		def := s.defs[d]
+		if def.text != nil {
+			fmt.Fprintf(&b, "typealias %s = %s\n", ident(d.pklName), def.text.render(hidden))
+			continue
+		}
 		if def.union != nil {
 			writeUnion(&b, ident(d.pklName), def.union)
 			continue

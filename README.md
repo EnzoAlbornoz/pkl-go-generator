@@ -35,7 +35,7 @@ go install github.com/EnzoAlbornoz/pkl-go-generator/cmd/pkl-go-generator@latest
 ## Usage
 
 ```
-pkl-go-generator [-R] [-f type]... [-m module] [-o file] [-r type] [-t tag] [source ...]
+pkl-go-generator [-R] [-f type]... [-m module] [-map gotype=pkltype]... [-o file] [-r type] [-t tag] [source ...]
 pkl-go-generator -V
 ```
 
@@ -45,15 +45,16 @@ with `-`, the command reads one file from standard input. The schema is written
 to standard output, and warnings and errors go to standard error. The exit
 status is 0 on success, 1 on failure and 2 on invalid usage.
 
-| Option      | Meaning                                                        |
-| ----------- | -------------------------------------------------------------- |
-| `-R`        | Descend into subdirectories.                                   |
-| `-f type`   | Generate only struct `type` and the types it uses. Repeatable. |
-| `-m module` | Set the module name. Defaults to the root type.                |
-| `-o file`   | Write to `file` instead of standard output.                    |
-| `-r type`   | Make the fields of struct `type` module properties.            |
-| `-t tag`    | Use the `json` (default) or `yaml` struct tag for field names. |
-| `-V`        | Print the version and exit.                                    |
+| Option                | Meaning                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `-R`                  | Descend into subdirectories.                                   |
+| `-f type`             | Generate only struct `type` and the types it uses. Repeatable. |
+| `-m module`           | Set the module name. Defaults to the root type.                |
+| `-map gotype=pkltype` | Generate Go type `gotype` as Pkl type `pkltype`. Repeatable.   |
+| `-o file`             | Write to `file` instead of standard output.                    |
+| `-r type`             | Make the fields of struct `type` module properties.            |
+| `-t tag`              | Use the `json` (default) or `yaml` struct tag for field names. |
+| `-V`                  | Print the version and exit.                                    |
 
 Without `-r` or `-f`, every exported struct becomes a class. With `-r`, the
 fields of that one struct become module properties, and only the types it uses
@@ -239,14 +240,46 @@ numbers and `error` are skipped; both cases print a warning. A type whose name i
 by a module property or by a type of another package, gets a numeric suffix,
 also with a warning.
 
+### Overriding types
+
+`-map gotype=pkltype` replaces the Pkl type of a Go type. Use it for types that
+the rules above get wrong, such as types with a custom marshaler, and for types
+of packages that are not read, such as the imports of local files:
+
+```sh
+pkl-go-generator -r Config \
+  -map 'github.com/google/uuid.UUID=String(length == 36)' \
+  -map 'k8s.io/apimachinery/pkg/util/intstr.IntOrString=Int | String' \
+  config.go
+```
+
+```pkl
+id: UUID
+port: IntOrString?
+
+typealias UUID = String(length == 36)
+
+typealias IntOrString = Int | String
+```
+
+Name a Go type by its import path, a dot and its name. Types declared in local
+files, or in a file fetched from a URL other than GitHub, have no known import
+path, so name them by their package name instead, as in `config.Level`.
+
+Each mapped type that is used becomes a `typealias`, so that a pointer makes
+the whole type nullable. The Pkl type is copied as written: it should describe
+what the Go type encodes to, and it may use the Pkl standard library but not the
+generated types. A mapping takes precedence over the rules above. Repeat `-map`
+for each type; for the same type, the last one wins.
+
 ## Limitations
 
 Types are read from source without type checking. Marshaler methods are
 recognized only when they are declared on the type itself, not when they are
 promoted from an embedded field, and generic types map to `Any`. A type that
 customizes only decoding, with `UnmarshalJSON` or `UnmarshalYAML`, keeps its
-fields, as such methods usually just fill in defaults. Edit the generated
-schema when these rules do not fit.
+fields, as such methods usually just fill in defaults. Map such types with
+`-map`, or edit the generated schema, when these rules do not fit.
 
 ## Library
 

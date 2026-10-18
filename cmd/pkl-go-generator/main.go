@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	pkl-go-generator [-R] [-f type]... [-m module] [-o file] [-r type] [-t tag] [source ...]
+//	pkl-go-generator [-R] [-f type]... [-m module] [-map gotype=pkltype]... [-o file] [-r type] [-t tag] [source ...]
 //	pkl-go-generator -V
 //
 // Each source is a Go file or a directory of them, an import path with an
@@ -44,7 +44,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
-		fmt.Fprintf(stderr, "usage: %s [-R] [-f type]... [-m module] [-o file] [-r type] [-t tag] [source ...]\n", name)
+		fmt.Fprintf(stderr, "usage: %s [-R] [-f type]... [-m module] [-map gotype=pkltype]... [-o file] [-r type] [-t tag] [source ...]\n", name)
 		fmt.Fprintf(stderr, "       %s -V\n", name)
 		flags.PrintDefaults()
 	}
@@ -56,6 +56,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return nil
 	})
 	module := flags.String("m", "", "set the module `name` (default: the root type)")
+	typeMap := map[string]string{}
+	flags.Func("map", "map a Go type to a Pkl type: `gotype=pkltype`; may be repeated", func(s string) error {
+		goType, pklType, ok := strings.Cut(s, "=")
+		if !ok {
+			return errors.New("want gotype=pkltype")
+		}
+		typeMap[goType] = pklType
+		return nil
+	})
 	out := flags.String("o", "", "write to `file` instead of standard output")
 	root := flags.String("r", "", "make the fields of struct `type` module properties")
 	tag := flags.String("t", "json", "use the `tag` struct tag for field names: json or yaml")
@@ -74,12 +83,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var loader remote.Loader
 	defer loader.Close()
 	g, err := pklgen.New(pklgen.Options{
-		Tag:    *tag,
-		Root:   *root,
-		Types:  types,
-		Module: *module,
-		Import: loader.Import,
-		Warn:   warn,
+		Tag:     *tag,
+		Root:    *root,
+		Types:   types,
+		Module:  *module,
+		TypeMap: typeMap,
+		Import:  loader.Import,
+		Warn:    warn,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
