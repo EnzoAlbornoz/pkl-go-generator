@@ -59,7 +59,7 @@ jobs:
           pattern: dist-*
           path: dist
           merge-multiple: true
-      - uses: jdx/packslip@7b32cd29a9240927882ee18b3db1dcfd8e0328b4 # v1.7.0
+      - uses: jdx/packslip@e0340e0c1d10c90a434de2b90f3a1ba345923564 # v1.11.4
         id: packslip
         with:
           artifacts: dist/*.tar.gz dist/*.zip
